@@ -2,6 +2,7 @@
 
 declare -r SUDO_CMD='sudo -n' # don't prompt for password but exit with error if password is required
 declare -r AT_CMD='/usr/bin/at'
+declare -r IPTABLES_SCRIPT='/home/mystic/work/mystic/script/iptables.sh'
 
 declare -r MYNAME="$( basename "$0" )"
 declare -r MYDIR="$( cd "$( dirname "$0" )" && pwd )"
@@ -30,63 +31,68 @@ find_devtoolset() {
 }
 
 # build and install from inside devtoolset environment
-build_and_install() {
+devtoolset_build() {
+  # save PATH environment variable
+  declare -r SAVED_PATH=${PATH}
+
+  # setup devtoolset environment
+  source scl_source enable ${DEVTOOLSET}
+
   # check GCC version
   declare -r EXPECTED_GCC_VER="6.3.1"
   if [[ ${EXPECTED_GCC_VER} != "$(gcc -dumpversion)" ]]; then
     output "STOP: expected GCC ${EXPECTED_GCC_VER}, but found $(gcc -dumpversion)"
-    return 1
+    exit 1
   fi
 
-  runcmd ./autogen.sh || return 3
+  runcmd ./autogen.sh || exit 3
 
-  runcmd ./configure || return 5
+  runcmd ./configure || exit 5
 
-  runcmd make clean || return 7
+  runcmd make clean || exit 7
 
-  runcmd make install || return 9
+  runcmd make || exit 9
 
+  # restore PATH environment variable
+  export PATH=${SAVED_PATH}
   return 0
 }
 
-# NOTE unused reference code -- som
+devtoolset_install() {
+  runcmd ${SUDO_CMD} scl enable ${DEVTOOLSET} 'make install' || exit 13
+}
+
+# verify running kernel version against pre-built kernel module
 verify_kernel_version() {
-  # verify running kernel version against pre-built kernel module
   declare -r RAWNAT_MODULE_PATH=./extensions/xt_RAWNAT.ko
   if [[ -f ${RAWNAT_MODULE_PATH} ]]; then
     declare -r EXPECTED_KERNEL_VER=$(/sbin/modinfo -F vermagic ${RAWNAT_MODULE_PATH} | awk '{ print $1 }')
-    if [[ ${EXPECTED_KERNEL_VER} != "$(uname -r)" ]]; then
-      output "STOP: expected kernel ${EXPECTED_KERNEL_VER}, but found $(uname -r)"
-      exit 1
+    if [[ ${EXPECTED_KERNEL_VER} == "$(uname -r)" ]]; then
+      return 0
+    else
+      output "NOTE: kernel modules were built against ${EXPECTED_KERNEL_VER}, but running kernel is $(uname -r)"
     fi
   else
     output "INFO: cannot find pre-built kernel module ${RAWNAT_MODULE_PATH}"
   fi
+
+  return 1
 }
 
 
-declare -i retval=0
-
-# invoked from devtoolset environment?
-if [[ ${1:-unset} == 'build_and_install' ]]; then
-  runcmd build_and_install; retval=$?
-  exit ${retval}
-fi
-
-
-# look for devtoolset-6
+# look for devtoolset package
 declare -r DEVTOOLSET="$(find_devtoolset 'devtoolset-6')"
 if [[ -z ${DEVTOOLSET} ]]; then
-  output "STOP: Software Collections devtoolset-6 package is not available"
+  output "STOP: Software Collections devtoolset package is not available"
   exit 13
 fi
 
-runcmd ${SUDO_CMD} scl enable devtoolset-6 "./${MYNAME} build_and_install"; retval=$?
-if [[ ${retval} -eq 0 ]]; then
-  declare -r IPTABLES_SCRIPT='/home/mystic/work/mystic/script/iptables.sh'
-  [[ -x ${IPTABLES_SCRIPT} ]] && runcmd ${IPTABLES_SCRIPT} setip
-fi
+# build with devtoolset
+runcmd verify_kernel_version || runcmd devtoolset_build
 
-exit ${retval}
+# install with devtoolset
+runcmd devtoolset_install
 
+# setup source IP for multicast
+[[ -x ${IPTABLES_SCRIPT} ]] && runcmd ${IPTABLES_SCRIPT} setip
 
