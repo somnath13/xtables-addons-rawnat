@@ -99,5 +99,7 @@ runcmd verify_kernel_version || runcmd devtoolset_build
 runcmd devtoolset_install
 
 # setup source IP for multicast
-[[ -f ${MIPSOS_FILE} ]] && [[ -x ${IPTABLES_SCRIPT} ]] && runcmd ${IPTABLES_SCRIPT} setip
+if [[ -f ${MIPSOS_FILE} ]] && [[ -x ${IPTABLES_SCRIPT} ]]; then
+  runcmd ${IPTABLES_SCRIPT} setip
+fi
 
