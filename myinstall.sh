@@ -3,6 +3,7 @@
 declare -r SUDO_CMD='sudo -n' # don't prompt for password but exit with error if password is required
 declare -r AT_CMD='/usr/bin/at'
 declare -r IPTABLES_SCRIPT='/home/mystic/work/mystic/script/iptables.sh'
+declare -r MIPSOS_FILE='/home/mystic/work/MIPSOS'
 
 declare -r MYNAME="$( basename "$0" )"
 declare -r MYDIR="$( cd "$( dirname "$0" )" && pwd )"
@@ -30,10 +31,11 @@ find_devtoolset() {
   return 1
 }
 
-# build and install from inside devtoolset environment
+# build from inside devtoolset environment
 devtoolset_build() {
-  # save PATH environment variable
+  # save environment variables
   declare -r SAVED_PATH=${PATH}
+  declare -r SAVED_LD_LIBRARY_PATH=${LD_LIBRARY_PATH}
 
   # setup devtoolset environment
   source scl_source enable ${DEVTOOLSET}
@@ -53,12 +55,15 @@ devtoolset_build() {
 
   runcmd make || exit 9
 
-  # restore PATH environment variable
+  # restore environment variables
   export PATH=${SAVED_PATH}
+  export LD_LIBRARY_PATH=${SAVED_LD_LIBRARY_PATH}
   return 0
 }
 
+# install from inside devtoolset environment
 devtoolset_install() {
+  # NOTE: run 'scl' via 'sudo' because installation requires root privilege AND devtoolset
   runcmd ${SUDO_CMD} scl enable ${DEVTOOLSET} 'make install' || exit 13
 }
 
@@ -94,5 +99,5 @@ runcmd verify_kernel_version || runcmd devtoolset_build
 runcmd devtoolset_install
 
 # setup source IP for multicast
-[[ -x ${IPTABLES_SCRIPT} ]] && runcmd ${IPTABLES_SCRIPT} setip
+[[ -f ${MIPSOS_FILE} ]] && [[ -x ${IPTABLES_SCRIPT} ]] && runcmd ${IPTABLES_SCRIPT} setip
 
